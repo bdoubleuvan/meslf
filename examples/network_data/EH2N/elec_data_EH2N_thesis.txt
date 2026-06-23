@@ -1,0 +1,1 @@
+ 0  & \textbf{5.376}  & -0.101  & \textbf{2.0 } \textbf{+1.0$\iu$  }  &  0--1  & 0.014 +0.143$\iu  &  1  & \textbf{5.774}  & \textbf{0}  & \textbf{2.5 } \textbf{+1.5$\iu$  }  &   &  & 
