@@ -1,0 +1,1 @@
+\multirow{2}{*}{\acrshort{gb}} & \glssymbol{efficiency} & &  & 0.81 & & \multirow{2}{*}{\acrshort{chp}} & \glssymbol{efficiency}^{\glssymbol{sup:gas}\glssymbol{sup:elec}} & \glssymbol{efficiency}^{\glssymbol{sup:gas}\glssymbol{sup:heat}} &  & 0.65 & 0.81 & 
