@@ -1,0 +1,255 @@
+"""Example of a gas network with 3 nodes (and one compressor). based on the example in Shabanpour-Haghighi & Seifi (2016)
+"""
+from meslf.networks.gas_network import GasNetwork, GasNode, GasLink
+from meslf.networks.carrier import Gas
+import numpy as np
+
+bar = 1e5 #[Pa]
+hour = 3600 #[s]
+
+def create_network(carrier,r,D,L,eps):
+    """Create a network with low pressure flow pipelines and one compressor
+    
+    Parameters
+    ----------
+    carrier : Carrier
+        gas carrier
+    r : float
+        compressor ratio
+    D : list
+        list of pipe diameters in m
+    L : list
+        list of pipe lengths in m
+    
+    Returns
+    -------
+    gas_net : GasNetwork
+        The network
+    """
+    gas_net = GasNetwork('test gas network')
+    g0 = GasNode('g0',node_type=0,p=50.*bar) # reference node
+    g1 = GasNode('g1',node_type=1,q=10.8649e3*carrier.rhon/hour) # load node
+    g2 = GasNode('g2',node_type=1,q=23.7756e3*carrier.rhon/hour) # load node
+    g3 = GasNode('g3',node_type=1,q=0.) #load node
+    
+    l0 = GasLink('l0',g0,g1,link_type = 'pipe_high_pres_colebrook',link_params = {'carrier':carrier, 'D':D, 'L':L,'eps':eps})
+    l1 = GasLink('l1',g0,g2,link_type = 'pipe_high_pres_colebrook',link_params = {'carrier':carrier, 'D':D, 'L':L,'eps':eps})
+    l2 = GasLink('l2',g3,g2,link_type = 'pipe_high_pres_colebrook',link_params = {'carrier':carrier, 'D':D, 'L':L,'eps':eps})
+    l3 = GasLink('l3',g1,g3,link_type = 'compressor',link_params = {'carrier':carrier, 'r':r})
+    
+    gas_net.add_link(l0)
+    gas_net.add_link(l1)
+    gas_net.add_link(l2)
+    gas_net.add_link(l3)
+    return gas_net
+
+def initialize_network(network,carrier,scale_var=None,scale_var_params=None):
+    """Sets values of network variables to be used for initial guess.
+    
+    Parameters
+    ----------
+    network : GasNetwork
+        The network to be initialized
+        
+    Returns
+    -------
+    x0 : np array
+        initial guess
+    """
+    form = 'full'
+    p_init = np.array([45.,47.,50.])*bar #[Pa]
+    q_init = 15*1e3*np.ones(4)*carrier.rhon/hour #[kg/s]
+    x_init = np.concatenate((q_init,p_init))
+    network.initialize()
+    network.update(x_init,formulation=form) # update without scaling, since x_init is unscaled
+    x0 = network.set_x_init(formulation=form,scale_var=scale_var,scale_var_params=scale_var_params)
+    return x0
+
+def solve_system(network,tol,max_iter,h,x0,scale_var=None,scale_var_params=None,D_F=np.array([]),D_x=np.array([]),det_tol=1e-8):
+    """Solve the network using analytical Jacobian and FD Jacobian, with basic NR
+    
+    Parameters
+    ----------
+    network : GasNetwork
+        The network to be initialized
+    form : string
+        Formulation to be used.
+    tol : float
+        tolerance of NR
+    max_iter : int
+        maximum number of iterations of NR
+    h : float
+        step size used for FD
+    x0 : np array
+        inital guess
+        
+    Returns
+    -------
+    x_sol_FD : np array
+        solution vector, using FD Jacobian
+    iters_FD : int
+        total number of iterations, using FD Jacobian
+    err_vec_FD : np array
+        vector with the error of NR for every iteration, using FD Jacobian
+    x_sol : np array
+        solution vector, using analytical Jacobian
+    iters : int
+        total number of iterations, using analytical Jacobian 
+    err_vec : np array
+        vector with the error of NR for every iteration, using analytical Jacobian
+    """
+    form = 'full'
+    network.update(x0,formulation=form,scale_var=scale_var,scale_var_params=scale_var_params)
+    print("\nSolving system using FD Jacobian")
+    x_sol_FD,iters_FD,err_vec_FD,p_sol_FD,q_sol_FD,q_inj_FD = network.solve_network(tol,max_iter,h=h,formulation=form,solver='NR_FD',scale_var=scale_var,scale_var_params=scale_var_params,D_F=D_F,D_x=D_x,det_tol=det_tol)
+    
+    network.update(x0,formulation=form,scale_var=scale_var,scale_var_params=scale_var_params)
+    print("\nSolving system using analytical Jacobian")
+    x_sol,iters,err_vec,p_sol,q_sol,q_inj = network.solve_network(tol,max_iter,formulation=form,solver='NR',scale_var=scale_var,scale_var_params=scale_var_params,D_F=D_F,D_x=D_x,det_tol=det_tol)
+    
+    return x_sol_FD,iters_FD,err_vec_FD,x_sol,iters,err_vec
+
+def print_results(x_sol_FD,iters_FD,err_vec_FD,x_sol,iters,err_vec):
+    """Print the results.
+    
+    Parameters
+    ----------
+    _sol_FD : np array
+        solution vector, using FD Jacobian
+    iters_FD : int
+        total number of iterations, using FD Jacobian
+    err_vec_FD : np array
+        vector with the error of NR for every iteration, using FD Jacobian
+    x_sol : np array
+        solution vector, using analytical Jacobian
+    iters : int
+        total number of iterations, using analytical Jacobian 
+    err_vec : np array
+        vector with the error of NR for every iteration, using analytical Jacobian
+    """
+    print("\nFD solution:")
+    print("Error vector = {}".format(err_vec_FD))
+    print("Ater {} iterations the solution is {}".format(format(iters_FD),format(x_sol_FD)))
+
+    
+    print("\nAnalytical solution:")
+    print("Error vector = {}".format(err_vec))
+    print("Ater {} iterations the solution is {}".format(format(iters),format(x_sol)))
+    
+def print_full_solution(x_sol,network):
+    """Print the full set of network parameters
+    
+    Parameters
+    ----------
+    x_sol : np array
+        solution vector
+    network : GasNetwork
+        The network corresponding to the solution vector
+    form : string
+        Formulation to be used.
+    """
+    form = 'full'
+    p_vec,q_vec,q_inj = network.update_full(x_sol,formulation=form)
+    
+    node_order = []
+    edge_order = []
+    for n in network.get_nodes():
+        node_order.append(n.number)
+    for n in network.get_links():
+        edge_order.append(n.number)
+    
+    np.set_printoptions(precision=4)
+    print("\nFull solution using analytical method:")
+    print("Solution for pressure: p = {}".format(p_vec[node_order]))
+    print("Solution for injected flow: q_inj in m^3/h = {}".format(q_inj[node_order]))
+    print("Solution for edge flows: q in m^3/h = {}".format(q_vec[edge_order]))
+    
+def example_g3n_pu():
+    """Check the solution of the example network
+    """
+    #Given
+    # link parameters
+    r = 1.3 # compressor ratio
+    L = 30000 #[m]
+    D = .150 #[m]
+    eps = 0.05*1e-3 #[m]
+    # carrier
+    mu = 0.288e-6 #[m^2/s]
+    S = 0.6106
+    Z = 0.8
+    pn = 1.01325*bar #[Pa]
+    Tn = 273.15 #[K]
+    T = 281.15 #[K]
+    R = 8.314413 #[J/molK]
+    M = 28.97e-3 #[kg/mol]
+    R_air = R/M #[J/kgK]
+    gas = Gas('high pres gas',S,R_air,Z,pn,Tn,T,mu=mu)
+    scale_var = 'per_unit'
+    qbase = 15.*1e3*gas.rhon/hour
+    pbase = 30.*bar
+    scale_var_params = {'qbase':qbase,'pbase':pbase}
+    # create network
+    gas_net = create_network(gas,r,D,L,eps)
+    # initalize network
+    x0 = initialize_network(gas_net,gas,scale_var=scale_var,scale_var_params=scale_var_params)
+    
+    #When 
+    h = 1e-6
+    tol = 1e-6
+    max_iter = 500
+    x_sol_FD,iters_FD,err_vec_FD,x_sol,iters,err_vec = solve_system(gas_net,tol,max_iter,h,x0,scale_var=scale_var,scale_var_params=scale_var_params)
+    p_sol_expected = np.array([29.10207835, 34.07703674, 37.832701851793935])*bar/pbase
+    
+    q_sol_expected = np.array([18.23274048, 16.40775952, 7.36784048, 7.36784048])*1e3*gas.rhon/hour/qbase
+    
+    x_sol_expected = np.concatenate((q_sol_expected,p_sol_expected))
+    
+    #Then
+    assert np.allclose(x_sol,x_sol_expected,rtol=1e-3) 
+    
+def example_g3n_scaled_solver():
+    """Check the solution of the example network
+    """
+    #Given
+    # link parameters
+    r = 1.3 # compressor ratio
+    L = 30000 #[m]
+    D = .150 #[m]
+    eps = 0.05*1e-3 #[m]
+    # carrier
+    mu = 0.288e-6 #[m^2/s]
+    S = 0.6106
+    Z = 0.8
+    pn = 1.01325*bar #[Pa]
+    Tn = 273.15 #[K]
+    T = 281.15 #[K]
+    R = 8.314413 #[J/molK]
+    M = 28.97e-3 #[kg/mol]
+    R_air = R/M #[J/kgK]
+    gas = Gas('high pres gas',S,R_air,Z,pn,Tn,T,mu=mu)
+    # create network
+    gas_net = create_network(gas,r,D,L,eps)
+    # initalize network
+    x0 = initialize_network(gas_net,gas)
+    
+    #When 
+    h = 1e-6
+    tol = 1e-6
+    max_iter = 500
+    qbase = 15.*1e3*gas.rhon/hour
+    pbase = 30.*bar
+    #Fb = qbase * np.ones(len(x0))
+    #xb = pbase * np.ones(len(x0))
+    #D_F = np.diag(1/Fb)
+    #D_x = np.diag(1/xb)
+    scale_var = 'matrix'
+    scale_var_params = {'qbase':qbase,'pgbase':pbase}
+    x_sol_FD,iters_FD,err_vec_FD,x_sol,iters,err_vec = solve_system(gas_net,tol,max_iter,h,x0,scale_var=scale_var,scale_var_params=scale_var_params)
+    p_sol_expected = np.array([29.10207835, 34.07703674, 37.832701851793935])*bar
+    
+    q_sol_expected = np.array([18.23274048, 16.40775952, 7.36784048, 7.36784048])*1e3*gas.rhon/hour
+    
+    x_sol_expected = np.concatenate((q_sol_expected,p_sol_expected))
+    
+    #Then
+    assert np.allclose(x_sol,x_sol_expected,rtol=1e-3) 
